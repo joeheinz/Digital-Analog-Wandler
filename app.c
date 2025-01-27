@@ -39,6 +39,7 @@
 #include "sl_sensor_imu.h"
 #include "sl_sleeptimer.h"
 #include "sl_imu.h"
+#include "em_gpio.h"
 
 //__________________New IADC 25.01.2025____________________________________
 #include "em_iadc.h"
@@ -101,10 +102,6 @@ SL_WEAK void app_process_action(void) {
         handle_imu_data();
         readIADC_and_notify(); //new
     }
-
-    //__________________New IADC 25.01.2025____________________________________
-
-
 
 }
 
@@ -236,9 +233,8 @@ void sl_button_on_change(const sl_button_t *handle) {
 
 
 
-//__________________New IADC 25.01.2025____________________________________
-
-
+//__________________Working for ONE port IADC 25.01.2025____________________________________
+/*
 // How many samples to capture
 #define NUM_SAMPLES         1024
 
@@ -248,7 +244,9 @@ void sl_button_on_change(const sl_button_t *handle) {
 
 
 //#define IADC_INPUT_0_PORT_PIN     iadcPosInputPortBPin0;
-#define IADC_INPUT_0_PORT_PIN     iadcPosInputPadAna2;
+#define IADC_INPUT_0_PORT_PIN     iadcPosInputPadAna2; //ORIGINAL! PIN AIN2, 7 ON BOARD
+//26.01.2025:
+#define IADC_INPUT_1_PORT_PIN     iadcNegInputPadAna3;
 
 void initIADC(void)
 {
@@ -272,10 +270,11 @@ void initIADC(void)
   init.srcClkPrescale = IADC_calcSrcClkPrescale(IADC0, CLK_SRC_ADC_FREQ, 0);
 
 
-  initAllConfigs.configs[0].reference = iadcCfgReferenceInt1V2;
-  initAllConfigs.configs[0].vRef = 1240;
+  initAllConfigs.configs[0].reference = iadcCfgReferenceInt1V2; //ORIGINAL DO NOT CHANGE
+  initAllConfigs.configs[0].vRef = 3300;
   initAllConfigs.configs[0].osrHighSpeed = iadcCfgOsrHighSpeed2x;
-  initAllConfigs.configs[0].analogGain = iadcCfgAnalogGain0P5x;
+  initAllConfigs.configs[0].analogGain = iadcCfgAnalogGain1x;  // Ganancia
+  //initAllConfigs.configs[0].twosComplement = iadcCfgTwosCompBipolar;
 
 
   initAllConfigs.configs[0].adcClkPrescale = IADC_calcAdcClkPrescale(IADC0,
@@ -289,10 +288,11 @@ void initIADC(void)
   initScan.dataValidLevel = iadcFifoCfgDvl2;
   initScan.fifoDmaWakeup = true;
 
-
+  //26.01.2025:
   scanTable.entries[0].posInput = IADC_INPUT_0_PORT_PIN;
   scanTable.entries[0].negInput = iadcNegInputGnd;
   scanTable.entries[0].includeInScan = true;
+
 
   IADC_init(IADC0, &init, &initAllConfigs);
 
@@ -306,9 +306,7 @@ void initIADC(void)
   uint32_t postStartStatus = IADC0->STATUS;
   app_log_info("Post Start IADC STATUS: 0x%08X", postStartStatus);
 
-
 }
-
 
 // ======== [MANEJO IADC Y BLE] ========
 // NUEVA FUNCIÓN: Leer y notificar el valor del ADC por BLE
@@ -326,5 +324,137 @@ static void readIADC_and_notify(void) {
         sc = sl_bt_gatt_server_notify_all(gattdb_analog, sizeof(adcValue), adcValue);
     }
     app_log_status(sc);
+}
+*/
+
+//__________________Test for two port IADC 25.01.2025____________________________________
+
+// How many samples to capture
+#define NUM_SAMPLES         1024
+
+// Set CLK_ADC to 10 MHz
+#define CLK_SRC_ADC_FREQ    20000000  // CLK_SRC_ADC
+#define CLK_ADC_FREQ        10000000  // CLK_ADC - 10 MHz max in normal mode
+
+#define IADC_INPUT_0_PORT_PIN     iadcPosInputPortBPin0 // THIS WORKS!
+#define IADC_INPUT_1_PORT_PIN     iadcNegInputGnd    // Ground reference
+
+#define IADC_INPUT_2_PORT_PIN     iadcNegInputPortBPin3
+
+#define IADC_INPUT_0_BUS          BBUSALLOC
+#define IADC_INPUT_0_BUSALLOC     GPIO_BBUSALLOC_BEVEN0_ADC0
+#define IADC_INPUT_1_BUS          BBUSALLOC
+#define IADC_INPUT_1_BUSALLOC     GPIO_BBUSALLOC_BODD0_ADC0
+
+/**************************************************************************//**
+ * @brief IADC initialization
+ *****************************************************************************/
+void initIADC(void)
+{
+  GPIO_PinModeSet(gpioPortD, 2, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortD, 2);
+
+  GPIO_PinModeSet(gpioPortB, 0, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortB, 0);
+
+  GPIO_PinModeSet(gpioPortB, 3, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortB, 3);
+
+  GPIO_PinModeSet(gpioPortA, 0, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortA, 0);
+
+  GPIO_PinModeSet(gpioPortA, 4, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortA, 4);
+
+  GPIO_PinModeSet(gpioPortD, 2, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortD, 2);
+
+  GPIO_PinModeSet(gpioPortB, 2, gpioModePushPull, 0);
+  GPIO_PinOutClear(gpioPortB, 2);
+
+  // Declare initialization structures
+  IADC_Init_t init = IADC_INIT_DEFAULT;
+  IADC_AllConfigs_t initAllConfigs = IADC_ALLCONFIGS_DEFAULT;
+  IADC_InitScan_t initScan = IADC_INITSCAN_DEFAULT;
+
+  // Scan table structure
+  IADC_ScanTable_t scanTable = IADC_SCANTABLE_DEFAULT;
+
+  CMU_ClockEnable(cmuClock_IADC0, true);
+  CMU_ClockEnable(cmuClock_GPIO, true);
+
+  IADC_reset(IADC0);
+
+  // Use FSRC0 as the IADC clock to allow operation in EM2
+  CMU_ClockSelectSet(cmuClock_IADCCLK, cmuSelect_FSRCO);
+
+  // Shutdown between conversions to reduce current
+  init.warmup = iadcWarmupNormal;
+
+  // Set HFSCLK prescale
+  init.srcClkPrescale = IADC_calcSrcClkPrescale(IADC0, CLK_SRC_ADC_FREQ, 0);
+
+  // Configure reference voltage and gain
+  initAllConfigs.configs[0].reference = iadcCfgReferenceInt1V2; // Internal reference (1.2V)
+  initAllConfigs.configs[0].vRef = 300;                        // Reference voltage in mV
+  initAllConfigs.configs[0].analogGain = iadcCfgAnalogGain4x;   // Gain of 1x
+
+  // Configure CLK_ADC prescale
+  initAllConfigs.configs[0].adcClkPrescale = IADC_calcAdcClkPrescale(IADC0,
+                                                                     CLK_ADC_FREQ,
+                                                                     0,
+                                                                     iadcCfgModeNormal,
+                                                                     init.srcClkPrescale);
+
+  // Configure scan mode
+  initScan.triggerAction = iadcTriggerActionContinuous; // Continuous scan mode
+  initScan.dataValidLevel = iadcFifoCfgDvl2;            // FIFO generates an interrupt after 2 entries
+  initScan.fifoDmaWakeup = true;                        // Enable DMA wakeup on FIFO
+
+  // Configure scan table for input channels
+  scanTable.entries[0].posInput = IADC_INPUT_0_PORT_PIN; // POSITIVE
+  scanTable.entries[0].negInput = IADC_INPUT_2_PORT_PIN; // NEGATIVE
+  scanTable.entries[0].includeInScan = true;            // Include this channel in scan
+
+  // Initialize IADC
+  IADC_init(IADC0, &init, &initAllConfigs);
+  IADC_initScan(IADC0, &initScan, &scanTable);
+
+  // Configure GPIO analog bus for ADC inputs
+  GPIO->IADC_INPUT_0_BUS |= IADC_INPUT_0_BUSALLOC;
+  GPIO->IADC_INPUT_1_BUS |= IADC_INPUT_1_BUSALLOC;
+
+  // Start scan conversion
+  IADC_command(IADC0, iadcCmdStartScan);
+
+  uint32_t status = IADC0->STATUS;
+  app_log_info("IADC STATUS: 0x%08X", status);
+}
+
+/**************************************************************************//**
+ * @brief Read and notify IADC value via BLE
+ *****************************************************************************/
+static void readIADC_and_notify(void)
+{
+  // Check if there is valid data in the FIFO
+  if (IADC0->STATUS & IADC_STATUS_SCANFIFODV) {
+    uint32_t iadcResult = IADC_pullScanFifoResult(IADC0).data; // Read result
+    app_log_info("FIFO: 0x%08X", iadcResult);
+
+    uint8_t adcValue[2];
+    adcValue[0] = iadcResult & 0xFF;         // Lower byte
+    adcValue[1] = (iadcResult >> 8) & 0xFF; // Upper byte
+
+    app_log_info("IADC Value: %u", iadcResult);
+
+    // Write ADC value to GATT characteristic
+    sl_status_t sc = sl_bt_gatt_server_write_attribute_value(gattdb_analog, 0, sizeof(adcValue), adcValue);
+    if (sc == SL_STATUS_OK) {
+      sc = sl_bt_gatt_server_notify_all(gattdb_analog, sizeof(adcValue), adcValue);
+    }
+    app_log_status(sc);
+  } else {
+    app_log_warning("No valid data in FIFO.");
+  }
 }
 
